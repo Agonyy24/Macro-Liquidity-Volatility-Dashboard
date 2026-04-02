@@ -9,6 +9,9 @@ from scipy.interpolate import griddata
 import os
 from dotenv import load_dotenv
 from iv_surface import render_iv_surface
+from fed_pred import plot_fed_projections
+from hv_vs_iv import plot_iv_vs_hv
+from gamma import plot_gamma_profile
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="Macro Quant Dashboard", layout="wide")
@@ -97,7 +100,7 @@ if not df_macro.empty and not df_market.empty:
     st.markdown("---")
     
     # ZAKŁADKI (TABS)
-    tab1, tab2, tab3 = st.tabs(["Płynność Systemowa", "Wskaźniki Rynkowe", "Implied Voltality Surface"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Płynność Systemowa", "Wskaźniki Rynkowe", "Implied Voltality Surface","FED dot plot", "IV vs HV", "Gamma Exposure"])
     
     with tab1:
         st.header("Fed Net Liquidity vs S&P 500")
@@ -158,6 +161,14 @@ if not df_macro.empty and not df_market.empty:
 
     with tab3:
         render_iv_surface("SPY")
+
+    with tab4:
+        plot_fed_projections()
+    with tab5:
+        plot_iv_vs_hv()
+    with tab6:
+        plot_gamma_profile()
+
 
 else:
     st.warning("Brak danych do wyświetlenia. Sprawdź połączenie i klucze API.")

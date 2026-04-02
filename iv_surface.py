@@ -1,4 +1,3 @@
-# iv_surface.py
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -11,14 +10,24 @@ import streamlit as st
 def get_iv_surface_data(ticker_symbol="SPY"):
     try:
         ticker = yf.Ticker(ticker_symbol)
-        spot_price = ticker.history(period="1d")['Close'].iloc[-1]
-        expirations = ticker.options
         
+        # Szybsze i bezpieczniejsze pobieranie ceny spot
+        try:
+            spot_price = ticker.fast_info['lastPrice']
+        except Exception:
+            # Fallback w razie problemów z fast_info
+            hist = ticker.history(period="5d")
+            if hist.empty:
+                return None, None, None, "Nie udało się pobrać ceny instrumentu bazowego."
+            spot_price = hist['Close'].iloc[-1]
+            
+        expirations = ticker.options
         if not expirations:
             return None, None, None, "Brak danych o opcjach."
 
-        selected_expirations = expirations[1:9]
-        today = datetime.today()
+        # Pobieramy od indeksu 0 (nie omijamy najbliższych wygaśnięć!)
+        selected_expirations = expirations[:10] 
+        today = datetime.today().date() # Używamy samej daty dla czystej matematyki
         all_data = []
 
         for exp in selected_expirations:
@@ -27,19 +36,21 @@ def get_iv_surface_data(ticker_symbol="SPY"):
                 calls = opt.calls
                 puts = opt.puts
                 
-                exp_date = datetime.strptime(exp, '%Y-%m-%d')
+                exp_date = datetime.strptime(exp, '%Y-%m-%d').date()
                 dte = (exp_date - today).days
-                if dte <= 0: dte = 1 
+                if dte <= 0: dte = 0.5 # 0.5 dnia dla opcji wygasających dzisiaj (0DTE)
                 
                 otm_puts = puts[puts['strike'] <= spot_price].copy()
                 otm_calls = calls[calls['strike'] > spot_price].copy()
                 
                 clean_chain = pd.concat([otm_puts, otm_calls])
                 
+                # Dodano openInterest i podniesiono limit IV
                 clean_chain = clean_chain[
                     (clean_chain['volume'] > 0) & 
+                    (clean_chain['openInterest'] > 0) & 
                     (clean_chain['impliedVolatility'] > 0.01) &
-                    (clean_chain['impliedVolatility'] < 1.5) 
+                    (clean_chain['impliedVolatility'] < 3.0) 
                 ]
                 
                 for _, row in clean_chain.iterrows():
@@ -56,14 +67,17 @@ def get_iv_surface_data(ticker_symbol="SPY"):
         dte_grid = np.linspace(df['DTE'].min(), df['DTE'].max(), 50)
         X, Y = np.meshgrid(strike_grid, dte_grid)
         
-        Z = griddata((df['Strike'], df['DTE']), df['IV'], (X, Y), method='cubic')
+        # Dwustopniowa interpolacja eliminująca "płaskie klify"
+        Z_linear = griddata((df['Strike'], df['DTE']), df['IV'], (X, Y), method='linear')
+        Z_nearest = griddata((df['Strike'], df['DTE']), df['IV'], (X, Y), method='nearest')
         
-        mean_z = np.nanmean(Z)
-        Z = np.nan_to_num(Z, nan=mean_z if not np.isnan(mean_z) else 0)
+        # Wypełniamy wartości NaN (krawędzie siatki) najbliższymi logicznymi punktami
+        Z = np.where(np.isnan(Z_linear), Z_nearest, Z_linear)
 
-        return X, Y, Z, None
+
+        return X, Y, Z, spot_price, None
     except Exception as e:
-        return None, None, None, str(e)
+        return None, None, None, None, str(e)
 
 def render_iv_surface(ticker_symbol="SPY"):
     """Funkcja główna do wywołania w dashboardzie."""
@@ -71,16 +85,39 @@ def render_iv_surface(ticker_symbol="SPY"):
     st.markdown("Wykres zmontowany z płynnych opcji OTM (Out-of-the-Money). Pozwala ocenić *Term Structure* oraz *Volatility Skew*.")
     
     with st.spinner("Przeliczanie siatki 3D dla opcji (to zajmie kilka sekund)..."):
-        X, Y, Z, error_msg = get_iv_surface_data(ticker_symbol)
+        # ZMIANA: Odbieramy dodatkową zmienną spot_price
+        X, Y, Z, spot_price, error_msg = get_iv_surface_data(ticker_symbol)
         
         if error_msg:
             st.error(f"Nie udało się wygenerować powierzchni: {error_msg}")
         elif Z is not None:
+            # Tworzymy główną powierzchnię IV
             fig_iv = go.Figure(data=[go.Surface(
                 z=Z, x=X, y=Y, 
                 colorscale='Plasma',
                 colorbar_title='IV (Zmienność)'
             )])
+
+            # --- NOWY KOD: Dodanie płaszczyzny dla ceny Spot (ATM) ---
+            if spot_price:
+                # Tworzymy siatkę dla pionowej ściany na całej wysokości Z i głębokości Y
+                y_plane = np.array([Y.min(), Y.max()])
+                z_plane = np.array([Z.min(), Z.max()])
+                Y_plane, Z_plane = np.meshgrid(y_plane, z_plane)
+                # Ustawiamy X na stałą wartość (aktualną cenę)
+                X_plane = np.full_like(Y_plane, spot_price)
+
+                fig_iv.add_trace(go.Surface(
+                    x=X_plane, 
+                    y=Y_plane, 
+                    z=Z_plane,
+                    colorscale=[[0, 'cyan'], [1, 'cyan']], # Jasnoniebieski kolor
+                    opacity=0.4, # Półprzezroczysta, żeby nie zasłaniała danych
+                    showscale=False, # Nie potrzebujemy dla niej legendy
+                    name='Spot Price (ATM)',
+                    hoverinfo='skip' # Żeby myszka nie "łapała" tej ściany
+                ))
+            # ---------------------------------------------------------
 
             fig_iv.update_layout(
                 scene=dict(

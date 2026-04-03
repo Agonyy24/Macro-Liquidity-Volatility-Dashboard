@@ -1,0 +1,99 @@
+# src/fed_dots.py
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from fredapi import Fred
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+FRED_API_KEY = os.getenv('FRED_API_KEY')
+
+def plot_fed_projections():
+    st.subheader("FED Dot Plot (Range & Median)")
+    st.markdown("<span style='font-size:14px; color:gray;'>Summary of Economic Projections (SEP). Shows the range of Federal Reserve officials' target interest rates.</span>", unsafe_allow_html=True)
+    
+    if not FRED_API_KEY:
+        st.warning("FRED_API_KEY is missing from the .env file!")
+        return
+
+    try:
+        fred = Fred(api_key=FRED_API_KEY)
+        
+        # Fetching data: Median, High, Low
+        # FRED returns annual projections (index is usually Jan 1st of the target year)
+        df_fed = pd.DataFrame({
+            'Median Consensus': fred.get_series('FEDTARMD'),
+            'High (Hawkish)': fred.get_series('FEDTARRH'),
+            'Low (Dovish)': fred.get_series('FEDTARRL')
+        }).dropna()
+
+        # We only care about current and future years
+        current_year = pd.Timestamp.now().year
+        df_fed = df_fed[df_fed.index.year >= current_year]
+
+        fig = go.Figure()
+
+        # Range lines (vertical bars connecting Low to High)
+        for idx, row in df_fed.iterrows():
+            fig.add_trace(go.Scatter(
+                x=[idx.year, idx.year], 
+                y=[row['Low (Dovish)'], row['High (Hawkish)']],
+                mode='lines',
+                line=dict(color='rgba(255, 255, 255, 0.2)', width=3, dash='dot'),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+
+        # Add the dots and median line
+        fig.add_trace(go.Scatter(
+            x=df_fed.index.year, 
+            y=df_fed['High (Hawkish)'], 
+            mode='markers', 
+            name='Highest Projection', 
+            marker=dict(color='#ff4b4b', size=10, symbol='triangle-up'),
+            hovertemplate="<b>Year:</b> %{x}<br><b>Rate:</b> %{y:.2f}%<extra></extra>"
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df_fed.index.year, 
+            y=df_fed['Low (Dovish)'], 
+            mode='markers', 
+            name='Lowest Projection', 
+            marker=dict(color='#00ff00', size=10, symbol='triangle-down'),
+            hovertemplate="<b>Year:</b> %{x}<br><b>Rate:</b> %{y:.2f}%<extra></extra>"
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df_fed.index.year, 
+            y=df_fed['Median Consensus'], 
+            mode='lines+markers', 
+            name='Median (Consensus)', 
+            line=dict(color='gold', width=3), 
+            marker=dict(size=12, symbol='circle'),
+            hovertemplate="<b>Year:</b> %{x}<br><b>Median Rate:</b> %{y:.2f}%<extra></extra>"
+        ))
+
+        # Layout formatting
+        fig.update_layout(
+            xaxis_title="Projection Year",
+            yaxis_title="Target Interest Rate",
+            xaxis=dict(tickmode='linear', dtick=1, gridcolor='rgba(128, 128, 128, 0.2)'),
+            yaxis=dict(ticksuffix="%", gridcolor='rgba(128, 128, 128, 0.2)'),
+            template="plotly_dark",
+            height=500,
+            margin=dict(l=0, r=0, t=30, b=0),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Error fetching data from FRED: {e}")

@@ -93,7 +93,7 @@ def plot_fed_projections():
             )
         )
         
-        st.plotly_chart(fig, use_container_width=True)
-
+        st.plotly_chart(fig, width='stretch')
+        
     except Exception as e:
         st.error(f"Error fetching data from FRED: {e}")

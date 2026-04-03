@@ -91,7 +91,7 @@ def get_market_data(start):
     try:
         # DFF is the official ticker for the daily Effective Fed Funds Rate
         dff = fred.get_series('DFF', observation_start=start)
-        dff.name = 'Fed Rate'
+        dff.name = 'Fed Effective Rate'
         dff.index = dff.index.tz_localize(None)
         series_list.append(dff)
     except Exception as e:
@@ -99,7 +99,7 @@ def get_market_data(start):
             
     # 3. Combine everything
     if series_list:
-        df_market = pd.concat(series_list, axis=1).ffill().dropna()
+        df_market = pd.concat(series_list, axis=1, sort=True).ffill().dropna()
         return df_market
         
     return pd.DataFrame()
@@ -110,6 +110,7 @@ days_back = st.sidebar.slider("History range (days)", 365, 1825, 730)
 start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
 
 st.sidebar.markdown("---")
+st.sidebar.markdown("**Daily change**")
 
 with st.spinner("Fetching data..."):
     df_macro = get_macro_data(start_date)
@@ -129,7 +130,10 @@ if not df_market.empty:
             current_price = df_market[column].iloc[-1]
             pct_change = 0.0
             
-        st.sidebar.metric(label=column, value=f"{current_price:.2f}", delta=f"{pct_change:.2f}%")
+        if column in ['Fed Effective Rate', '10Y Yield']:
+            st.sidebar.metric(label=column, value=f"{current_price:.2f}%", delta=None)
+        else:
+            st.sidebar.metric(label=column, value=f"{current_price:.2f}", delta=f"{pct_change:.2f}%")
 
 # --- MAIN APPLICATION (FULL SCREEN TABS) ---
 if not df_macro.empty and not df_market.empty:
@@ -137,9 +141,9 @@ if not df_macro.empty and not df_market.empty:
     # TABS ROUTING
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "System Liquidity", 
-        "Market Indicators", 
-        "Implied Volatility Surface", 
+        "Market Indicators",
         "FED Dot Plot", 
+        "Implied Volatility Surface",      
         "IV vs HV", 
         "Gamma Exposure"
     ])
@@ -151,10 +155,11 @@ if not df_macro.empty and not df_market.empty:
         plot_market_indicators(df_market, start_date, fred)
 
     with tab3:
-        render_iv_surface("SPY")
+        plot_fed_projections()
 
     with tab4:
-        plot_fed_projections()
+        
+        render_iv_surface("SPY")
         
     with tab5:
         plot_iv_vs_hv(days_back)

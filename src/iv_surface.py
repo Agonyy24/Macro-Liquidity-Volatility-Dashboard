@@ -140,4 +140,4 @@ def render_iv_surface(ticker_symbol="SPY"):
                 template="plotly_dark"
             )
             
-            st.plotly_chart(fig_iv, use_container_width=True)
+            st.plotly_chart(fig_iv, width='stretch')

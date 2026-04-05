@@ -4,101 +4,185 @@ import numpy as np
 import plotly.graph_objects as go
 import yfinance as yf
 from scipy.stats import norm
+from fredapi import Fred
 import streamlit as st
 
-# --- Helper Function: Calculate Gamma ---
-def calc_gamma(S, K, T, r, sigma):
-    # Protection against division by zero for very short-dated options
+@st.cache_data(ttl=86400)  # Refresh once per day — rate doesn't change often
+def get_risk_free_rate() -> float:
+    try:
+        FRED_API_KEY = st.secrets["FRED_API_KEY"]
+
+        if not FRED_API_KEY:
+            raise ValueError("FRED_API_KEY not found in environment variables.")
+
+        fred = Fred(api_key=FRED_API_KEY)
+        # DGS3MO = 3-Month Bond
+        series = fred.get_series("DGS3MO")
+        # Drop NaN values (weekends/holidays have no data) and take the latest
+        rate_pct = series.dropna().iloc[-1]
+        return float(rate_pct) / 100.0  # Convert from percent to decimal
+
+    except Exception as e:
+        st.warning(f"Could not fetch risk-free rate from FRED ({e}). Falling back to 4.0%.")
+        return 0.04
+
+
+# ---------------------------------------------------------------------------
+# Black-Scholes Gamma calculation
+# ---------------------------------------------------------------------------
+
+def calc_gamma(S: float, K: pd.Series, T: float, r: float, sigma: pd.Series) -> pd.Series:
+    """
+    Computes Black-Scholes gamma for a series of options.
+
+    Args:
+        S:     Current spot price of the underlying asset.
+        K:     Series of strike prices.
+        T:     Time to expiration in years.
+        r:     Risk-free interest rate (decimal, e.g. 0.045).
+        sigma: Series of implied volatilities (decimal).
+
+    Returns:
+        Series of gamma values (second derivative of option price w.r.t. spot).
+    """
+    # Guard against degenerate inputs that would cause division by zero
     T = np.maximum(T, 1e-5)
     sigma = np.maximum(sigma, 1e-5)
-    
-    # Black-Scholes formula for d1
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    
-    # Gamma is the derivative of d1
+
+    # d1 from the Black-Scholes formula
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+
+    # Gamma = N'(d1) / (S * sigma * sqrt(T))
     gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
     return gamma
 
-# --- Main Dashboard Component ---
-def plot_gamma_profile():
-    st.subheader("Net Gamma Exposure (GEX) Profile")
-    st.markdown("<span style='font-size:14px; color:gray;'>Market Maker hedging levels. Positive (Green) = Volatility suppression (Call Walls). Negative (Red) = Volatility acceleration (Put Walls).</span>", unsafe_allow_html=True)
-    
-    # DTE Slider
-    max_dte = st.slider("Filter options by max Days to Expiry (DTE)", min_value=0, max_value=90, value=7)
-    
-    with st.spinner('Calculating Market Maker Gamma Exposure...'):
+
+# ---------------------------------------------------------------------------
+# Main Streamlit component
+# ---------------------------------------------------------------------------
+
+def plot_gamma_profile(ticker_symbol: str = "SPY") -> None:
+    """
+    Renders the Net Gamma Exposure (GEX) bar chart inside a Streamlit dashboard.
+
+    Positive GEX (green) = dealers are long gamma → they buy dips and sell rips
+                            → acts as a volatility suppressor (Call Walls).
+    Negative GEX (red)   = dealers are short gamma → they sell dips and buy rips
+                            → acts as a volatility accelerator (Put Walls).
+    """
+    st.subheader(f"Net Gamma Exposure (GEX) Profile - {ticker_symbol}")
+    st.markdown(
+        "<span style='font-size:14px; color:gray;'>"
+        "Market Maker hedging levels. "
+        "Positive (Green) = Volatility suppression (Call Walls). "
+        "Negative (Red) = Volatility acceleration (Put Walls)."
+        "</span>",
+        unsafe_allow_html=True,
+    )
+
+    # --- UI Controls ---
+    max_dte = st.slider(
+        "Filter options by max Days to Expiry (DTE)",
+        min_value=0,
+        max_value=90,
+        value=7,
+    )
+
+    with st.spinner("Fetching risk-free rate and calculating Gamma Exposure..."):
         try:
-            ticker = yf.Ticker("SPY")
-            spot_price = ticker.history(period="1d")['Close'].iloc[-1]
-            
-            # Fetch multiple expirations to allow filtering
-            expirations = ticker.options[:15] 
-            
-            gex_data = []
-            
+            # Fetch live risk-free rate from FRED
+            r = get_risk_free_rate()
+
+            # --- Spot Price ---
+            ticker = yf.Ticker(ticker_symbol)
+            try:
+                spot_price = ticker.fast_info["lastPrice"]
+            except Exception:
+                spot_price = ticker.history(period="1d")["Close"].iloc[-1]
+
+            # Fetch the first 15 expirations from the options chain
+            expirations = ticker.options[:15]
+
+            gex_rows = []
+            today = pd.Timestamp.today().normalize()
+
             for exp in expirations:
-                # Normalize dates to remove hours/minutes for a clean daily comparison
-                today_date = pd.Timestamp.today().normalize()
                 exp_date = pd.to_datetime(exp).normalize()
-                days_to_exp = (exp_date - today_date).days
-                
-                # --- SLIDER INTEGRATION ---
-                # Skip options expiring beyond the selected DTE
+                days_to_exp = (exp_date - today).days
+
+                # Skip expirations beyond the user-selected DTE threshold
                 if days_to_exp > max_dte:
                     continue
-                
-                # Dirac Delta protection: Assume 0-DTE options have at least 0.5 days left
-                T = max(days_to_exp, 0.5) / 365.0
-                
-                opt = ticker.option_chain(exp)
-                
-                # --- CALL Options ---
-                calls = opt.calls
-                # Calculate Gamma manually for each option in the chain
-                calls['Gamma'] = calc_gamma(spot_price, calls['strike'], T, 0.04, calls['impliedVolatility'])
-                # GEX = Open Interest * Gamma * Contract Size (100) * Spot Price
-                calls['GEX'] = calls['openInterest'] * calls['Gamma'] * 100 * spot_price
-                
-                # --- PUT Options ---
-                puts = opt.puts
-                puts['Gamma'] = calc_gamma(spot_price, puts['strike'], T, 0.04, puts['impliedVolatility'])
-                # Assume customers buy Puts for insurance, making Market Maker exposure negative
-                puts['GEX'] = -puts['openInterest'] * puts['Gamma'] * 100 * spot_price
-                
-                # Store calculations
-                gex_data.append(calls[['strike', 'GEX']])
-                gex_data.append(puts[['strike', 'GEX']])
-                
-            # Combine and sum GEX by Strike Price
-            df_gex = pd.concat(gex_data)
-            gex_profile = df_gex.groupby('strike')['GEX'].sum().reset_index()
-            
-            # Filter for strikes within +/- 10% of spot price to remove extreme OTM noise
-            gex_profile = gex_profile[(gex_profile['strike'] > spot_price * 0.9) & (gex_profile['strike'] < spot_price * 1.1)]
 
-            # --- Draw the Chart ---
+                # Treat 0-DTE options as having 0.5 days left to avoid singularity
+                T = max(days_to_exp, 0.5) / 365.0
+
+                chain = ticker.option_chain(exp)
+
+                # --- Call options ---
+                # Assumption: market makers are short calls → long gamma → positive GEX
+                calls = chain.calls.copy()
+                calls["Gamma"] = calc_gamma(
+                    spot_price, calls["strike"], T, r, calls["impliedVolatility"]
+                )
+                calls["GEX"] = calls["openInterest"] * calls["Gamma"] * 100 * spot_price
+
+                # --- Put options ---
+                # Assumption: customers buy puts for insurance → dealers are long puts
+                # → short gamma position → negative GEX
+                puts = chain.puts.copy()
+                puts["Gamma"] = calc_gamma(
+                    spot_price, puts["strike"], T, r, puts["impliedVolatility"]
+                )
+                puts["GEX"] = -puts["openInterest"] * puts["Gamma"] * 100 * spot_price
+
+                gex_rows.append(calls[["strike", "GEX"]])
+                gex_rows.append(puts[["strike", "GEX"]])
+
+            if not gex_rows:
+                st.warning("No options data found within the selected DTE range.")
+                return
+
+            # Aggregate GEX per strike across all selected expirations
+            df_gex = pd.concat(gex_rows, ignore_index=True)
+            gex_profile = df_gex.groupby("strike")["GEX"].sum().reset_index()
+
+            # Restrict to strikes within ±10% of spot to remove far-OTM noise
+            gex_profile = gex_profile[
+                (gex_profile["strike"] > spot_price * 0.90)
+                & (gex_profile["strike"] < spot_price * 1.10)
+            ]
+
+            # --- Chart ---
+            colors = [
+                "#e05252" if val < 0 else "#26a641"
+                for val in gex_profile["GEX"]
+            ]
+
             fig = go.Figure()
-            
-            # Color bars: Green (Positive GEX = Shock absorber), Red (Negative GEX = Accelerator)
-            colors = ['#ff4b4b' if val < 0 else '#00ff00' for val in gex_profile['GEX']]
-            
-            fig.add_trace(go.Bar(
-                x=gex_profile['strike'],
-                y=gex_profile['GEX'],
-                marker_color=colors,
-                name='Net GEX',
-                hovertemplate="<b>Strike:</b> %{x}<br><b>Net GEX:</b> %{y:,.0f}<extra></extra>"
-            ))
-            
-            # Highlight current spot price
+
+            fig.add_trace(
+                go.Bar(
+                    x=gex_profile["strike"],
+                    y=gex_profile["GEX"],
+                    marker_color=colors,
+                    name="Net GEX",
+                    hovertemplate=(
+                        "<b>Strike:</b> %{x}<br>"
+                        "<b>Net GEX:</b> %{y:,.0f}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+            # Vertical line at current spot price
             fig.add_vline(
-                x=spot_price, 
-                line_dash="dash", 
-                line_color="gold", 
-                annotation_text=f" Spot Price: {spot_price:.2f} ",
+                x=spot_price,
+                line_dash="dash",
+                line_color="gold",
+                annotation_text=f" Spot: {spot_price:.2f} | r: {r:.2%}",
                 annotation_position="top left",
-                annotation_font=dict(color="gold")
+                annotation_font=dict(color="gold"),
             )
 
             fig.update_layout(
@@ -108,10 +192,10 @@ def plot_gamma_profile():
                 bargap=0.2,
                 height=500,
                 margin=dict(l=0, r=0, t=30, b=0),
-                showlegend=False
+                showlegend=False,
             )
-            
+
             st.plotly_chart(fig, width='stretch')
-            
+
         except Exception as e:
             st.error(f"Error calculating GEX: {e}")

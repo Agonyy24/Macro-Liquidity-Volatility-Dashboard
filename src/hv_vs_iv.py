@@ -35,7 +35,7 @@ def plot_iv_vs_hv(days_back):
         
         df_vol = df_vol.dropna()
         
-        # THE GOLDEN FIX (Dynamic): Cut off the warm-up buffer and only keep the exact days the user requested
+        # Cut off the warm-up buffer from EWMA
         df_vol = df_vol[df_vol.index >= display_start]
 
         fig = go.Figure()

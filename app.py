@@ -4,8 +4,6 @@ import pandas as pd
 import yfinance as yf
 from fredapi import Fred
 from datetime import datetime, timedelta
-import os
-from dotenv import load_dotenv
 
 # --- IMPORT MODULARIZED COMPONENTS ---
 from src.iv_surface import render_iv_surface
@@ -38,11 +36,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- LOAD API KEYS ---
-load_dotenv()
-FRED_API_KEY = os.getenv("FRED_API_KEY")
+FRED_API_KEY = st.secrets["FRED_API_KEY"]
 
 if not FRED_API_KEY:
-    st.error("FRED_API_KEY is missing! Ensure you have a .env file in your project folder.")
+    st.error("FRED_API_KEY is missing! Ensure you have a /.streamlit/secrets.toml file in your project folder.")
     st.stop()
 
 fred = Fred(api_key=FRED_API_KEY)
@@ -56,7 +53,7 @@ def get_macro_data(start):
         rrp = fred.get_series('RRPONTSYD', observation_start=start)
         
         df = pd.DataFrame({'WALCL': fed_balance, 'TGA': tga, 'RRP': rrp}).ffill()
-        df['Net_Liquidity'] = df['WALCL'] - df['TGA'] - df['RRP']
+        df['Net_Liquidity'] = (df['WALCL'] - df['TGA'] - df['RRP']) * 1000000 # Output as Trillions of $
         return df
     except Exception as e:
         st.error(f"FRED API Error: {e}")

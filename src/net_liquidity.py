@@ -15,7 +15,7 @@ def plot_net_liquidity(df_macro, df_market):
     # X Axis: Liquidity
     fig.add_trace(go.Scatter(
         x=combined_df.index, y=combined_df['Net_Liquidity'], 
-        name='Net Liquidity ($M)', line=dict(color='#00F5FF', width=2)
+        name='Net Liquidity ($T)', line=dict(color='#00F5FF', width=2)
     ))
     
     # Y Axis: SP500
@@ -29,7 +29,7 @@ def plot_net_liquidity(df_macro, df_market):
         height=600,
         hovermode='x unified',
         yaxis=dict(
-            title=dict(text='Net Liquidity (Mln USD)', font=dict(color='#00F5FF')), 
+            title=dict(text='Net Liquidity', font=dict(color='#00F5FF')), 
             tickfont=dict(color='#00F5FF')
         ),
         yaxis2=dict(

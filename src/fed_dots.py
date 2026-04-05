@@ -3,12 +3,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from fredapi import Fred
-import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-FRED_API_KEY = os.getenv('FRED_API_KEY')
+# Load API
+FRED_API_KEY = st.secrets["FRED_API_KEY"]
 
 def plot_fed_projections():
     st.subheader("FED Dot Plot (Range & Median)")

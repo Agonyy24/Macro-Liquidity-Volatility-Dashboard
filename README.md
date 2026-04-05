@@ -24,7 +24,7 @@ An educational dashboard built with Streamlit to visualize macroeconomic liquidi
 2. **Install dependecies:**
 ```pip install -r requirements.txt```
 3. **Configure API Keys (Streamlit Secrets):**
-```FRED_API_KEY = "sk-your-secret-key-here"```
+```FRED_API_KEY = "sk-your-secret-key-here"``` \
 You can get free FRED API key here -> [FRED API](https://fred.stlouisfed.org/docs/api/fred)
 4. **Run the App:**
 ```streamlit run app.py```

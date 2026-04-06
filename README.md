@@ -18,8 +18,8 @@ An educational dashboard built with Streamlit to visualize macroeconomic liquidi
 * **Visualization:** Plotly
 * **Market Data:** yfinance / FRED Data
 
-## Local Setup
-
+## Local Setup (Recommended) 
+Running the application locally is **highly recommended** due to Yahoo Finance API rate-limiting on shared cloud environments (e.g., Streamlit Cloud). Local execution uses your dedicated IP, ensuring much higher stability for options data fetching.
 1. **Clone the repository**
 2. **Install dependecies:**
 ```pip install -r requirements.txt```

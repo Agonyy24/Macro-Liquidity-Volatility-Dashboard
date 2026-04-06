@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from scipy.interpolate import griddata
 from datetime import datetime
 import streamlit as st
+import time
 
 @st.cache_data(ttl=3600)
 def get_iv_surface_data(ticker_symbol="SPY"):
@@ -32,6 +33,8 @@ def get_iv_surface_data(ticker_symbol="SPY"):
         all_data = []
 
         for exp in selected_expirations:
+            # Target anti-bot system
+            time.sleep(0.5)
             try:
                 opt = ticker.option_chain(exp)
                 calls = opt.calls

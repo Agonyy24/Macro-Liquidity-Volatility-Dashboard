@@ -24,6 +24,7 @@ Running the application locally is **highly recommended** due to Yahoo Finance A
 2. **Install dependecies:**
 ```pip install -r requirements.txt```
 3. **Configure API Keys (Streamlit Secrets):**
+```Macro-Liquidity-Volatility-Dashboard/.streamlit/secrets.toml``` \
 ```FRED_API_KEY = "sk-your-secret-key-here"``` \
 You can get free FRED API key here -> [FRED API](https://fred.stlouisfed.org/docs/api/fred)
 4. **Run the App:**

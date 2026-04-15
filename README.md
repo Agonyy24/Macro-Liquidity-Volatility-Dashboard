@@ -41,4 +41,4 @@ Unlike paid institutional data feeds (e.g., Bloomberg, OptionMetrics) that provi
 * Without active pricing and IV, the Delta and Gamma mathematical models cannot compute, resulting in flat or empty charts.
 
 **The Solution:**
-For accurate analysis and visualization, **please run this dashboard during active US market hours (9:30 AM – 4:15 PM EST)**. If you wish to develop or backtest after hours, it is highly recommended to cache an intraday `.csv` snapshot of the options chain and route the dashboard to read from your local file.
+For accurate analysis and visualization, **please run this dashboard during active US market hours (9:30 AM – 4:00 PM EST)**. If you wish to develop or backtest after hours, it is highly recommended to cache an intraday `.csv` snapshot of the options chain and route the dashboard to read from your local file.

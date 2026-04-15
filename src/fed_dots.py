@@ -12,7 +12,7 @@ def plot_fed_projections():
     st.markdown("<span style='font-size:14px; color:gray;'>Summary of Economic Projections (SEP). Shows the range of Federal Reserve officials' target interest rates.</span>", unsafe_allow_html=True)
     
     if not FRED_API_KEY:
-        st.warning("FRED_API_KEY is missing from the .env file!")
+        st.warning("FRED_API_KEY is missing from the .streamlit/secrets.toml file!")
         return
 
     try:

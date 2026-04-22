@@ -35,7 +35,7 @@ You can get free FRED API key here -> [FRED API](https://fred.stlouisfed.org/doc
 Please note that this dashboard relies on the free Yahoo Finance API (`yfinance`) for live options chain data. Because of this, you may encounter **empty charts, zeroed-out Net GEX, or missing IV Surfaces** if you run the application outside of regular US Market Hours.
 
 **Why does this happen?**
-Unlike paid institutional data feeds (e.g., Bloomberg, OptionMetrics) that provide End-of-Day (EOD) snapshots, Yahoo Finance reflects the *live* state of the order book. After the market closes (4:15 PM EST), Market Makers withdraw their quotes. Consequently:
+Unlike paid institutional data feeds (e.g., Bloomberg, OptionMetrics) that provide End-of-Day (EOD) snapshots, Yahoo Finance reflects the *live* state of the order book. After the market closes (4:00 PM EST), Market Makers withdraw their quotes. Consequently:
 * **Bid/Ask spreads drop to zero**, causing standard Black-Scholes implied volatility calculations to fail or return `0.00%`.
 * **Open Interest (OI) and Volume data may temporarily wipe** or report inaccurately until the clearinghouse updates the next morning.
 * Without active pricing and IV, the Delta and Gamma mathematical models cannot compute, resulting in flat or empty charts.

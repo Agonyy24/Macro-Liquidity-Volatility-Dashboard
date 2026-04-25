@@ -11,14 +11,12 @@ def plot_iv_vs_hv(days_back):
     
     with st.spinner('Fetching price history and calculating volatility...'):
         
-        # Calculate dynamic dates
         today = pd.Timestamp.today().normalize()
         display_start = today - pd.Timedelta(days=days_back)
         
-        # Add a 60-calendar-day hidden buffer (approx. 42 trading days) to ensure the 21-day EWMA is fully warmed up
+        # Add a 60-calendar-day hidden buffer to ensure the 21-day EWMA is fully "warmed up"
         fetch_start = display_start - pd.Timedelta(days=60)
         
-        # Fetch data using precise start dates instead of rigid periods
         spy = yf.Ticker("SPY").history(start=fetch_start.strftime('%Y-%m-%d'))['Close']
         vix = yf.Ticker("^VIX").history(start=fetch_start.strftime('%Y-%m-%d'))['Close']
         
@@ -27,10 +25,10 @@ def plot_iv_vs_hv(days_back):
         
         df_vol = pd.DataFrame({'SPY': spy, 'VIX': vix}).dropna()
         
-        # Calculate log returns and Historical Volatility (HV)
+        # Log returns and Historical Volatility (HV)
         df_vol['Log_Ret'] = np.log(df_vol['SPY'] / df_vol['SPY'].shift(1))
         
-        # Quant approach: Exponentially Weighted Moving Average (EWMA)
+        # Exponentially Weighted Moving Average (EWMA)
         df_vol['HV_21'] = df_vol['Log_Ret'].ewm(span=21, adjust=False).std() * np.sqrt(252) * 100
         
         df_vol = df_vol.dropna()
@@ -55,7 +53,7 @@ def plot_iv_vs_hv(days_back):
             y=df_vol['HV_21'], 
             name='HV (Realized Volatility - SPY)', 
             line=dict(color='royalblue', width=2),
-            fill='tonexty', # Visualizes the Volatility Risk Premium (VRP) area
+            fill='tonexty', # Visualizes the Volatility Risk Premium area
             fillcolor='rgba(255, 165, 0, 0.15)',
             hovertemplate="<b>Date:</b> %{x}<br><b>HV:</b> %{y:.2f}%<extra></extra>"
         ))

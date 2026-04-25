@@ -4,21 +4,13 @@ import numpy as np
 import plotly.graph_objects as go
 import yfinance as yf
 from scipy.stats import norm
-from fredapi import Fred
 import streamlit as st
 
-@st.cache_data(ttl=86400)  # Refresh once per day — rate doesn't change often
-def get_risk_free_rate() -> float:
+@st.cache_data(ttl=86400)  # Refresh once per day - rate doesn't change very often
+def get_risk_free_rate(_fred) -> float:
     try:
-        FRED_API_KEY = st.secrets["FRED_API_KEY"]
-
-        if not FRED_API_KEY:
-            raise ValueError("FRED_API_KEY not found in environment variables.")
-
-        fred = Fred(api_key=FRED_API_KEY)
         # DGS3MO = 3-Month Bond
-        series = fred.get_series("DGS3MO")
-        # Drop NaN values (weekends/holidays have no data) and take the latest
+        series = _fred.get_series("DGS3MO")
         rate_pct = series.dropna().iloc[-1]
         return float(rate_pct) / 100.0  # Convert from percent to decimal
 
@@ -27,10 +19,7 @@ def get_risk_free_rate() -> float:
         return 0.04
 
 
-# ---------------------------------------------------------------------------
-# Black-Scholes Gamma calculation
-# ---------------------------------------------------------------------------
-
+# --- Black-Scholes Gamma calculation ---
 def calc_gamma(S: float, K: pd.Series, T: float, r: float, sigma: pd.Series) -> pd.Series:
     """
     Computes Black-Scholes gamma for a series of options.
@@ -45,7 +34,7 @@ def calc_gamma(S: float, K: pd.Series, T: float, r: float, sigma: pd.Series) -> 
     Returns:
         Series of gamma values (second derivative of option price w.r.t. spot).
     """
-    # Guard against degenerate inputs that would cause division by zero
+    # Protect from division by zero
     T = np.maximum(T, 1e-5)
     sigma = np.maximum(sigma, 1e-5)
 
@@ -57,25 +46,21 @@ def calc_gamma(S: float, K: pd.Series, T: float, r: float, sigma: pd.Series) -> 
     return gamma
 
 
-# ---------------------------------------------------------------------------
-# Main Streamlit component
-# ---------------------------------------------------------------------------
+# --- Main Streamlit component ---
 
-def plot_gamma_profile(ticker_symbol: str = "SPY") -> None:
+def plot_gamma_profile(fred, ticker_symbol: str = "SPY") -> None:
     """
     Renders the Net Gamma Exposure (GEX) bar chart inside a Streamlit dashboard.
-
-    Positive GEX (green) = dealers are long gamma → they buy dips and sell rips
-                            → acts as a volatility suppressor (Call Walls).
-    Negative GEX (red)   = dealers are short gamma → they sell dips and buy rips
-                            → acts as a volatility accelerator (Put Walls).
+    IMPORTANT: This function assumes market makers are short on calls and long on puts.
+    Positive GEX = acts as a volatility suppressor (Call Walls).
+    Negative GEX = acts as a volatility accelerator (Put Walls).
     """
     st.subheader(f"Net Gamma Exposure (GEX) Profile - {ticker_symbol}")
     st.markdown(
         "<span style='font-size:14px; color:gray;'>"
         "Market Maker hedging levels. "
-        "Positive (Green) = Volatility suppression (Call Walls). "
-        "Negative (Red) = Volatility acceleration (Put Walls)."
+        "Positive = Volatility suppression (Call Walls). "
+        "Negative = Volatility acceleration (Put Walls)."
         "</span>",
         unsafe_allow_html=True,
     )
@@ -90,8 +75,7 @@ def plot_gamma_profile(ticker_symbol: str = "SPY") -> None:
 
     with st.spinner("Fetching risk-free rate and calculating Gamma Exposure..."):
         try:
-            # Fetch live risk-free rate from FRED
-            r = get_risk_free_rate()
+            r = get_risk_free_rate(fred)
 
             # --- Spot Price ---
             ticker = yf.Ticker(ticker_symbol)
@@ -120,7 +104,6 @@ def plot_gamma_profile(ticker_symbol: str = "SPY") -> None:
                 chain = ticker.option_chain(exp)
 
                 # --- Call options ---
-                # Assumption: market makers are short calls → long gamma → positive GEX
                 calls = chain.calls.copy()
                 calls["Gamma"] = calc_gamma(
                     spot_price, calls["strike"], T, r, calls["impliedVolatility"]
@@ -128,8 +111,6 @@ def plot_gamma_profile(ticker_symbol: str = "SPY") -> None:
                 calls["GEX"] = calls["openInterest"] * calls["Gamma"] * 100 * spot_price
 
                 # --- Put options ---
-                # Assumption: customers buy puts for insurance → dealers are long puts
-                # → short gamma position → negative GEX
                 puts = chain.puts.copy()
                 puts["Gamma"] = calc_gamma(
                     spot_price, puts["strike"], T, r, puts["impliedVolatility"]

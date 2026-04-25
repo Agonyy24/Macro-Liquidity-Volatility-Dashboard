@@ -2,37 +2,35 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from fredapi import Fred
 
-# Load API
-FRED_API_KEY = st.secrets["FRED_API_KEY"]
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_fed_projections_data(_fred):
+    df_fed = pd.DataFrame({
+        'Median Consensus': _fred.get_series('FEDTARMD'),
+        'High (Hawkish)': _fred.get_series('FEDTARRH'),
+        'Low (Dovish)': _fred.get_series('FEDTARRL')
+    }).dropna()
 
-def plot_fed_projections():
+    current_year = pd.Timestamp.now().year
+    df_fed = df_fed[df_fed.index.year >= current_year]
+    
+    return df_fed
+
+def plot_fed_projections(fred):
     st.subheader("FED Dot Plot (Range & Median)")
     st.markdown("<span style='font-size:14px; color:gray;'>Summary of Economic Projections (SEP). Shows the range of Federal Reserve officials' target interest rates.</span>", unsafe_allow_html=True)
     
-    if not FRED_API_KEY:
-        st.warning("FRED_API_KEY is missing from the .streamlit/secrets.toml file!")
-        return
-
     try:
-        fred = Fred(api_key=FRED_API_KEY)
-        
-        # Fetching data: Median, High, Low
-        # FRED returns annual projections (index is usually Jan 1st of the target year)
-        df_fed = pd.DataFrame({
-            'Median Consensus': fred.get_series('FEDTARMD'),
-            'High (Hawkish)': fred.get_series('FEDTARRH'),
-            'Low (Dovish)': fred.get_series('FEDTARRL')
-        }).dropna()
+        with st.spinner("Fetching FED projections..."):
+            df_fed = get_fed_projections_data(fred)
 
-        # We only care about current and future years
-        current_year = pd.Timestamp.now().year
-        df_fed = df_fed[df_fed.index.year >= current_year]
+        if df_fed.empty:
+            st.warning("No projection data available at the moment.")
+            return
 
         fig = go.Figure()
 
-        # Range lines (vertical bars connecting Low to High)
+        # Range lines
         for idx, row in df_fed.iterrows():
             fig.add_trace(go.Scatter(
                 x=[idx.year, idx.year], 
@@ -43,7 +41,7 @@ def plot_fed_projections():
                 hoverinfo='skip'
             ))
 
-        # Add the dots and median line
+        # Dots and median line
         fig.add_trace(go.Scatter(
             x=df_fed.index.year, 
             y=df_fed['High (Hawkish)'], 
@@ -88,9 +86,8 @@ def plot_fed_projections():
                 xanchor="right",
                 x=1
             )
-        )
-        
+        )     
         st.plotly_chart(fig, width='stretch')
         
     except Exception as e:
-        st.error(f"Error fetching data from FRED: {e}")
+        st.error(f"Error generating FED Dot Plot: {e}")

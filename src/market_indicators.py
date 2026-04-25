@@ -47,7 +47,6 @@ def plot_market_indicators(df_market, start_date, fred):
         st.subheader("Tail Risk (SKEW Index)")
         st.markdown("<span style='font-size:14px; color:gray;'>Black Swan pricing. 100 = Normal, 140+ = Extreme Fear.</span>", unsafe_allow_html=True)
         try:
-            # Fetching SKEW index dynamically using yfinance
             skew = yf.Ticker('^SKEW').history(start=start_date)['Close']
             fig_skew = go.Figure(data=[go.Scatter(x=skew.index, y=skew.values, line=dict(color='cyan'))])
             

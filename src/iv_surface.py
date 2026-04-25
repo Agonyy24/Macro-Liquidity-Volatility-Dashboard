@@ -8,14 +8,13 @@ from datetime import datetime
 import streamlit as st
 import time
 
-# EXTRACTION STAGE (I/O & Caching)
+# --- EXTRACTION STAGE ---
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_raw_options_data(ticker_symbol="SPY"):
     """Fetches raw OTM options chains and the underlying asset price from yfinance."""
     ticker = yf.Ticker(ticker_symbol)
     
-    # Fetch Spot Price
     try:
         spot_price = ticker.fast_info['lastPrice']
     except Exception:
@@ -59,7 +58,7 @@ def fetch_raw_options_data(ticker_symbol="SPY"):
     return raw_df, spot_price
 
 
-# TRANSFORMATION STAGE (Cleaning)
+# --- TRANSFORMATION STAGE (Cleaning) ---
 
 def filter_liquid_options(df: pd.DataFrame) -> pd.DataFrame:
     """Filters raw data for liquidity and reasonable IV bounds."""
@@ -71,14 +70,17 @@ def filter_liquid_options(df: pd.DataFrame) -> pd.DataFrame:
     
     if clean_df.empty:
         raise ValueError("Filters rejected all available options.")
-        
+
+    if clean_df['DTE'].nunique() < 2:
+            raise ValueError("Not enough diverse expirations to build a 3D surface (need at least 2). This often happens outside market hours.")
+ 
     # Standardize column names for further calculations
     return clean_df[['strike', 'DTE', 'impliedVolatility']].rename(
         columns={'strike': 'Strike', 'impliedVolatility': 'IV'}
     )
 
 
-# MODELING STAGE (Math)
+# --- MODELING STAGE ---
 
 def generate_surface_mesh(df: pd.DataFrame):
     """Generates a 3D grid using dual spatial interpolation."""
@@ -86,7 +88,7 @@ def generate_surface_mesh(df: pd.DataFrame):
     dte_grid = np.linspace(df['DTE'].min(), df['DTE'].max(), 50)
     X, Y = np.meshgrid(strike_grid, dte_grid)
     
-    # Interpolation (linear with nearest-neighbor fallback at the edges)
+    # Interpolation
     Z_linear = griddata((df['Strike'], df['DTE']), df['IV'], (X, Y), method='linear')
     Z_nearest = griddata((df['Strike'], df['DTE']), df['IV'], (X, Y), method='nearest')
     
@@ -94,15 +96,14 @@ def generate_surface_mesh(df: pd.DataFrame):
     return X, Y, Z
 
 
-# MAIN DATA PIPELINE
+# --- MAIN DATA PIPELINE ---
 
 def process_iv_surface(ticker_symbol: str):
     """Connects the entire process into one readable pipeline."""
     try:
-        # (Utilizing cache)
         raw_df, spot_price = fetch_raw_options_data(ticker_symbol)
         
-        # Transformation and Modeling (On-the-fly, fast calculations)
+        # Transformation and Modeling - On-the-fly
         X, Y, Z = (
             raw_df
             .pipe(filter_liquid_options)
@@ -112,11 +113,10 @@ def process_iv_surface(ticker_symbol: str):
         return X, Y, Z, spot_price, None
         
     except Exception as e:
-        # Clean error handling passed to the interface
         return None, None, None, None, str(e)
 
 
-# USER INTERFACE (Streamlit & Plotly)
+# --- USER INTERFACE  ---
 
 def render_iv_surface(ticker_symbol="SPY"):
     """Renders the component in the Streamlit dashboard."""

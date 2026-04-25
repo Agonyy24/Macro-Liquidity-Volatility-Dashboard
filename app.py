@@ -18,14 +18,12 @@ st.set_page_config(page_title="Macro Quant Dashboard", layout="wide")
 
 st.markdown("""
     <style>
-        /* 1. Fix padding so tabs don't hide under the top menu bar */
         .block-container {
             padding-top: 3rem !important;
             padding-bottom: 0rem !important;
             max-width: 95% !important;
         }
         
-        /* 2. Make the tabs larger and bolder */
         button[data-baseweb="tab"] > div[data-testid="stMarkdownContainer"] > p {
             font-size: 1.15rem !important;
             font-weight: 600 !important;
@@ -35,7 +33,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- LOAD API KEYS ---
+# --- LOADING API KEYS ---
 FRED_API_KEY = st.secrets["FRED_API_KEY"]
 
 if not FRED_API_KEY:
@@ -44,21 +42,7 @@ if not FRED_API_KEY:
 
 fred = Fred(api_key=FRED_API_KEY)
 
-# --- DATA FETCHING ---
-@st.cache_data(ttl=300)
-def get_macro_data(start):
-    try:
-        fed_balance = fred.get_series('WALCL', observation_start=start)
-        tga = fred.get_series('WTREGEN', observation_start=start)
-        rrp = fred.get_series('RRPONTSYD', observation_start=start)
-        
-        df = pd.DataFrame({'WALCL': fed_balance, 'TGA': tga, 'RRP': rrp}).ffill()
-        df['Net_Liquidity'] = (df['WALCL'] - df['TGA'] - df['RRP']) * 1000000 # Output as Trillions of $
-        return df
-    except Exception as e:
-        st.error(f"FRED API Error: {e}")
-        return pd.DataFrame()
-
+# --- SIDEBAR DATA FETCHING ---
 @st.cache_data(ttl=3600)
 def get_market_data(start):
     tickers = {
@@ -70,7 +54,6 @@ def get_market_data(start):
     
     series_list = []
     
-    # 1. Fetch market data from Yahoo Finance
     for name, ticker_symbol in tickers.items():
         try:
             ticker_obj = yf.Ticker(ticker_symbol)
@@ -78,23 +61,21 @@ def get_market_data(start):
             if not hist.empty:
                 close_prices = hist['Close']
                 close_prices.name = name
-                # Fix timezone BEFORE concat to prevent Pandas index errors
-                close_prices.index = close_prices.index.tz_localize(None)
+                # Fix timezone BEFORE concat to prevent index errors
+                close_prices.index = close_prices.index.tz_localize(None) 
                 series_list.append(close_prices)
         except Exception as e:
             st.warning(f"Failed to fetch {name}: {e}")
             
-    # 2. Fetch Effective Federal Funds Rate from FRED
     try:
-        # DFF is the official ticker for the daily Effective Fed Funds Rate
         dff = fred.get_series('DFF', observation_start=start)
         dff.name = 'Fed Effective Rate'
+        # Fix timezone BEFORE concat to prevent index errors
         dff.index = dff.index.tz_localize(None)
         series_list.append(dff)
     except Exception as e:
         st.warning(f"Failed to fetch Fed Rate: {e}")
             
-    # 3. Combine everything
     if series_list:
         df_market = pd.concat(series_list, axis=1, sort=True).ffill().dropna()
         return df_market
@@ -109,14 +90,12 @@ start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Daily change**")
 
-with st.spinner("Fetching data..."):
-    df_macro = get_macro_data(start_date)
+with st.spinner("Fetching market data..."):
     df_market = get_market_data(start_date)
 
 if not df_market.empty:
-    # Safely calculate % change bypassing the weekend ffill() issue
     for column in df_market.columns:
-        # Drop consecutive duplicates to find the actual last two trading days
+        # Remove consecutive duplicates to get the last unique price change for accurate delta calculation
         unique_prices = df_market[column].loc[(df_market[column].shift() != df_market[column])]
         
         if len(unique_prices) >= 2:
@@ -132,10 +111,9 @@ if not df_market.empty:
         else:
             st.sidebar.metric(label=column, value=f"{current_price:.2f}", delta=f"{pct_change:.2f}%")
 
-# --- MAIN APPLICATION (FULL SCREEN TABS) ---
-if not df_macro.empty and not df_market.empty:
+# --- MAIN APPLICATION ---
+if not df_market.empty:
     
-    # TABS ROUTING
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "System Liquidity", 
         "Market Indicators",
@@ -146,23 +124,22 @@ if not df_macro.empty and not df_market.empty:
     ])
     
     with tab1:
-        plot_net_liquidity(df_macro, df_market)
+        plot_net_liquidity(start_date, fred)
 
     with tab2:
         plot_market_indicators(df_market, start_date, fred)
 
     with tab3:
-        plot_fed_projections()
+        plot_fed_projections(fred)
 
     with tab4:
-        
         render_iv_surface("SPY")
         
     with tab5:
         plot_iv_vs_hv(days_back)
         
     with tab6:
-        plot_gamma_profile()
+        plot_gamma_profile(fred)
 
 else:
     st.warning("No data to display. Check your connection and API keys.")

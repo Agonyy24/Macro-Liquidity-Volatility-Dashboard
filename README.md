@@ -32,7 +32,7 @@ You can get obtain your free FRED API key here -> [FRED API](https://fred.stloui
 
 ##  Important Note on Data Availability (After-Hours Behavior)
 
-Please bear in mind that this dashboard relies on the free Yahoo Finance API (`yfinance`) for live options chain data. Because of this, you may encounter **empty charts, zeroed-out Net GEX, or missing IV Surfaces** if you run the application during overnight or pre-market hours.
+Please bear in mind that this dashboard relies on the free Yahoo Finance API (`yfinance`) for live options chain data. While I have done my best to catch these errors, you may encounter warnings about **empty charts, zeroed-out Net GEX, or missing IV Surfaces** if you run the application during overnight or pre-market hours.
 
 **Why does this happen?**
 Unlike paid institutional data feeds that provide stable End-of-Day snapshots, Yahoo Finance mirrors the active state of broker routing systems. While data usually lasts for several hours after the market closes (and through the weekend), a "system reset" occurs in the middle of the night / early morning before the next trading session (this is from my own experience - unfortunately, I couldn't find any precise information regarding the exact hours of this reset).
